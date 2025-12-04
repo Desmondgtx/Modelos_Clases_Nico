@@ -1,25 +1,27 @@
-## =============================================================================
-## Generalized Context Model (GCM)
-## Computational Modeling of Cognition and Behavior
-## Traducido de MATLAB a R - Versión minimalista
-## =============================================================================
 
+## Generalized Context Model (GCM)
+# Diego Garrido - Nicolás Marchant
+# Viña, 2025
+
+########################
 # Seed para reproducibilidad
 set.seed(42)
 
-# =============================================================================
-# 1. DEFINICIÓN DEL MODELO GCM
-# =============================================================================
+########################
+# DEFINICIÓN DEL MODELO GCM
 
-#' Predicción del GCM
-#' @param stim Matriz de estímulos (n x d)
-#' @param exemplars Matriz de ejemplares almacenados (m x d)
-#' @param c Parámetro de sensibilidad/especificidad
-#' @param w Vector de pesos atencionales
-#' @param gamma Parámetro de sesgo de respuesta
-#' @param cat_A Índices de ejemplares de categoría A
-#' @return Vector de probabilidades P(A) para cada estímulo
+# Predicción del GCM
+
 gcm_predict = function(stim, exemplars, c, w, gamma, cat_A = c(3, 4, 7, 8)) {
+  
+  # stim:      Matriz de estímulos (n x d)
+  # exemplars: Matriz de ejemplares almacenados (m x d)
+  # c:         Parámetro de sensibilidad/especificidad
+  # w:         Vector de pesos atencionales
+  # gamma:     Parámetro de sesgo de respuesta
+  # cat_A:     Índices de ejemplares de categoría A
+  
+  
   
   n_stim = nrow(stim)
   n_ex = nrow(exemplars)
@@ -42,14 +44,13 @@ gcm_predict = function(stim, exemplars, c, w, gamma, cat_A = c(3, 4, 7, 8)) {
   # Regla de Luce con gamma
   prob_A = (sum_A^gamma) / (sum_A^gamma + sum_B^gamma)
   
-  return(prob_A)
+  return(prob_A) # Vector de probabilidades P(A) para cada estímulo
 }
 
-# =============================================================================
-# 2. FUNCIONES DE AJUSTE
-# =============================================================================
+########################
+# FUNCIONES DE AJUSTE
 
-#' Negative Log-Likelihood (binomial)
+# Negative Log-Likelihood (binomial)
 gcm_nll = function(theta, stim, exemplars, data, N, cat_A = c(3, 4, 7, 8)) {
   c = theta[1]
   w = theta[2:4]
@@ -63,7 +64,7 @@ gcm_nll = function(theta, stim, exemplars, data, N, cat_A = c(3, 4, 7, 8)) {
   return(nll)
 }
 
-#' RMSE
+# RMSE
 gcm_rmse = function(theta, stim, exemplars, data, cat_A = c(3, 4, 7, 8)) {
   c = theta[1]
   w = theta[2:4]
@@ -73,19 +74,17 @@ gcm_rmse = function(theta, stim, exemplars, data, cat_A = c(3, 4, 7, 8)) {
   return(sqrt(mean((data - prob_pred)^2)))
 }
 
-# =============================================================================
-# 3. FUNCIÓN DE AJUSTE PRINCIPAL
-# =============================================================================
+########################
+# FUNCIÓN DE AJUSTE PRINCIPAL
 
-#' Ajustar GCM a datos
-#' @param data Vector de proporciones observadas
-#' @param stim Matriz de estímulos
-#' @param exemplars Matriz de ejemplares
-#' @param N Número de ensayos por estímulo
-#' @param method "nll" (default) o "rmse"
-#' @return Lista con parámetros ajustados y métricas
+# Ajustar GCM a datos
 gcm_fit = function(data, stim, exemplars, N = 10, cat_A = c(3, 4, 7, 8),
                    method = "nll") {
+  # data:      Vector de proporciones observadas
+  # stim:      Matriz de estímulos
+  # exemplars: Matriz de ejemplares
+  # N:         Número de ensayos por estímulo
+  # method:   "nll" (default) o "rmse"
   
   theta_init = c(1, 0.33, 0.33, 0.33, 1)
   lower = c(0.1, 0.01, 0.01, 0.01, 0.1)
@@ -135,12 +134,11 @@ gcm_fit = function(data, stim, exemplars, N = 10, cat_A = c(3, 4, 7, 8),
     AIC = AIC,
     BIC = BIC,
     convergence = fit$convergence
-  ))
+  )) # Lista con parámetros ajustados y métricas
 }
 
-# =============================================================================
-# 4. DATOS SINTÉTICOS Y DEMOSTRACIÓN
-# =============================================================================
+########################
+# DATOS SINTÉTICOS Y DEMOSTRACIÓN
 
 # Definir ejemplares (cubo 3D)
 exemplars = matrix(c(
@@ -168,15 +166,15 @@ N_trials = 10
 observed_counts = rbinom(8, N_trials, true_probs)
 observed_probs = observed_counts / N_trials
 
-cat("\n========== DEMOSTRACIÓN GCM ==========\n\n")
+
 cat("Probabilidades verdaderas:\n")
 print(round(true_probs, 3))
 cat("\nProporciones observadas:\n")
 print(round(observed_probs, 3))
 
-# =============================================================================
-# 5. AJUSTE DEL MODELO
-# =============================================================================
+
+########################
+# AJUSTE DEL MODELO
 
 result = gcm_fit(observed_probs, stim, exemplars, N_trials, cat_A, method = "nll")
 
@@ -201,11 +199,9 @@ cat(sprintf("w2        | %9.3f | %10.3f\n", true_w[2], result$w[2]))
 cat(sprintf("w3        | %9.3f | %10.3f\n", true_w[3], result$w[3]))
 cat(sprintf("gamma     | %9.3f | %10.3f\n", true_gamma, result$gamma))
 
-# =============================================================================
-# 6. AJUSTE PARA MÚLTIPLES SUJETOS (EJEMPLO)
-# =============================================================================
 
-cat("\n========== AJUSTE GRUPAL (5 sujetos simulados) ==========\n\n")
+########################
+# AJUSTE PARA MÚLTIPLES SUJETOS (EJEMPLO)
 
 n_subjects = 5
 subjects_data = matrix(0, n_subjects, 8)
@@ -238,14 +234,13 @@ cat("  w:", round(colMeans(params_summary[, c("w1", "w2", "w3")]), 3), "\n")
 cat("  gamma:", round(mean(params_summary$gamma), 3), "\n")
 cat("  RMSE:", round(mean(params_summary$RMSE), 4), "\n")
 
-# =============================================================================
-# 7. VISUALIZACIÓN
-# =============================================================================
+########################
+# VISUALIZACIÓN
 
 # Guardar gráfico como PNG
 par(mfrow = c(1, 2), mar = c(5, 4, 4, 2))
 
-# Gráfico 1: Barras comparativas
+# Gráfico de Barras comparativas
 barplot_matrix = rbind(observed_probs, result$predictions)
 bp = barplot(barplot_matrix, 
              beside = TRUE, 
@@ -263,7 +258,7 @@ x_pos = colMeans(bp)
 points(x_pos, true_probs, pch = 4, cex = 1.5, lwd = 2)
 legend("topleft", legend = "Verdadero", pch = 4, pt.lwd = 2, cex = 0.9)
 
-# Gráfico 2: Dispersión
+# Gráfico de dispersión
 plot(observed_probs, result$predictions,
      pch = 19, cex = 2, col = "steelblue",
      xlim = c(0, 1), ylim = c(0, 1),
@@ -277,8 +272,3 @@ text(observed_probs, result$predictions, labels = 1:8, pos = 3, cex = 0.8)
 mtext(paste0("RMSE = ", round(result$rmse, 4), 
              " | R² = ", round(result$r2, 4)),
       side = 1, line = 4, cex = 0.9)
-
-dev.off()
-
-cat("\n========== GRÁFICO GUARDADO ==========\n")
-cat("Archivo: GCM_fit_plot.png\n")

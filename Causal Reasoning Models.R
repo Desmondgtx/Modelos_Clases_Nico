@@ -1,19 +1,18 @@
-# =============================================================================
-# Script Unificado: Generación de Datos Sintéticos y Fitting de Modelos
-# Modelos: Normativo y Mutation Sampler
-# =============================================================================
-# Versión sin dependencias externas (solo R base)
-# =============================================================================
 
+# Modelos de razonamiento causal (normativo y Mutation Sampler)
+# Diego Garrido - Nicolás Marchant
+# Viña, 2025
+
+########################
+# Seed para reproducibilidad
 set.seed(123)
 options(scipen = 999)
 
-# =============================================================================
-# SECCIÓN 1: FUNCIONES HELPER
-# =============================================================================
 
-#' Crear el DAG base con todos los estados posibles
-#' @return dataframe con 8 estados (combinaciones de X1, Y, X2)
+########################
+# SECCIÓN 1: FUNCIONES HELPER
+
+# Crear el DAG base con todos los estados posibles
 create_base_dag <- function() {
   dag <- data.frame(
     X1 = c(1,1,1,1,0,0,0,0),
@@ -21,14 +20,14 @@ create_base_dag <- function() {
     X2 = c(1,0,1,0,1,0,1,0)
   )
   rownames(dag) <- c("111", "110", "101", "100", "011", "010", "001", "000")
-  return(dag)
+  return(dag) # dataframe con 8 estados (combinaciones de X1, Y, X2)
 }
 
-#' Obtener estructura de padres según el tipo de DAG
-#' @param dag_type Tipo de estructura: "commoncause", "chain", o "commoneffect"
-#' @param dag_df Dataframe del DAG base
-#' @return DAG con columnas de padres agregadas
+# Obtener estructura de padres según el tipo de DAG
 get_parent_structure <- function(dag_type, dag_df) {
+  # dag_type: Tipo de estructura ("commoncause", "chain", o "commoneffect")
+  # dag_df: Dataframe del DAG base
+
   n <- nrow(dag_df)
   
   if (dag_type == "commoncause") {
@@ -54,17 +53,17 @@ get_parent_structure <- function(dag_type, dag_df) {
     stop("Tipo de DAG inválido. Opciones: 'commoncause', 'chain', o 'commoneffect'")
   }
   
-  dag_df
+  dag_df # DAG con columnas de padres agregadas
 }
 
-#' Función de probabilidad Noisy-OR
-#' @param var Valor de la variable (0 o 1)
-#' @param parents Vector con valores de los padres
-#' @param c Probabilidad base (causa exógena)
-#' @param m Fuerza causal (power of the cause)
-#' @param b Probabilidad de fondo (background rate)
-#' @return Probabilidad
+# Función de probabilidad Noisy-OR
 prob <- function(var, parents = c(), c, m, b) {
+  # var:     Valor de la variable (0 o 1)
+  # parents: Vector con valores de los padres
+  # c:       Probabilidad base (causa exógena)
+  # m:       Fuerza causal (power of the cause)
+  # b:       Probabilidad de fondo (background rate)
+  
   exogenous <- length(parents) == 0
   if (exogenous) {
     p <- c
@@ -72,11 +71,10 @@ prob <- function(var, parents = c(), c, m, b) {
     cn <- sum(parents)
     p <- 1 - (1 - b) * (1 - m)^cn
   }
-  return(var * p + (1 - var) * (1 - p))
+  return(var * p + (1 - var) * (1 - p)) # Probabilidad
 }
 
-#' Construir matriz de adyacencia para el Mutation Sampler
-#' @return Matriz 8x8 donde 1 indica estados vecinos (difieren en 1 variable)
+# Construir matriz de adyacencia para el Mutation Sampler
 build_adjmat <- function() {
   states <- expand.grid(X1 = c(1,0), Y = c(1,0), X2 = c(1,0))
   states <- states[order(-states$X1, -states$Y, -states$X2), ]
@@ -92,15 +90,15 @@ build_adjmat <- function() {
       }
     }
   }
-  return(adj)
+  return(adj) # Matriz 8x8 donde 1 indica estados vecinos
 }
 
-#' Función auxiliar para calcular probabilidades condicionales
-#' @param numerator_states Índices de estados en el numerador
-#' @param denominator_states Índices de estados en el denominador
-#' @param probs Vector de probabilidades
-#' @return Probabilidad condicional
+# Función auxiliar para calcular probabilidades condicionales
 cond_prob <- function(numerator_states, denominator_states, probs) {
+  # numerator_states:   Índices de estados en el numerador
+  # denominator_states: Índices de estados en el denominador
+  # probs:              Vector de probabilidades
+  
   num <- sum(probs[numerator_states])
   denom <- sum(probs[denominator_states])
   if (denom == 0 || is.nan(denom) || is.na(denom)) {
@@ -110,18 +108,17 @@ cond_prob <- function(numerator_states, denominator_states, probs) {
   if (is.na(result) || is.nan(result) || !is.finite(result)) {
     return(0.5)
   }
-  return(result)
+  return(result) # Probabilidad condicional
 }
 
-# =============================================================================
-# SECCIÓN 2: FUNCIONES DE PREDICCIÓN
-# =============================================================================
+########################
+# FUNCIONES DE PREDICCIÓN
 
-#' Predicciones del Modelo Normativo
-#' @param c,m,b Parámetros del modelo Noisy-OR
-#' @param dag_structure Tipo de estructura causal
-#' @return Dataframe con inferencias y valores predichos
+# Predicciones del Modelo Normativo
 PredNormative <- function(c, m, b, dag_structure) {
+  # c,m,b:         Parámetros del modelo Noisy-OR
+  # dag_structure: Tipo de estructura causal
+  
   dag <- create_base_dag()
   dag <- get_parent_structure(dag_structure, dag)
   
@@ -148,18 +145,19 @@ PredNormative <- function(c, m, b, dag_structure) {
              cond_prob(c(1, 5), c(1, 5, 2, 6), dag$jointprob))
   )
   
-  return(inf_data)
+  return(inf_data) # Dataframe con inferencias y valores predichos
 }
 
-#' Predicciones del Mutation Sampler
-#' @param len Largo de la cadena MCMC
-#' @param c,m,b Parámetros del modelo Noisy-OR
-#' @param dag_structure Tipo de estructura causal
-#' @param use_poisson Si TRUE, len es el lambda de una Poisson
-#' @param bias Sesgo hacia estado inicial (1 = todo 1s, 8 = todo 0s)
-#' @return Dataframe con inferencias y valores predichos
+# Predicciones del Mutation Sampler
+
 PredMutationSampler <- function(len, c, m, b, dag_structure, 
                                 use_poisson = FALSE, bias = 0.5) {
+  # len:           Largo de la cadena MCMC
+  # c,m,b:         Parámetros del modelo Noisy-OR
+  # dag_structure: Tipo de estructura causal
+  # use_poisson:   Si TRUE, len es el lambda de una Poisson
+  # bias:          Sesgo hacia estado inicial (1 = todo 1s, 8 = todo 0s)
+  
   
   if (use_poisson) {
     actual_len <- rpois(1, len - 2) + 2
@@ -222,19 +220,18 @@ PredMutationSampler <- function(len, c, m, b, dag_structure,
              cond_prob(c(1, 5), c(1, 5, 2, 6), dag$mcmc_probs))
   )
   
-  return(inf_data)
+  return(inf_data) # Dataframe con inferencias y valores predichos
 }
 
-# =============================================================================
-# SECCIÓN 3: FUNCIONES DE FITTING
-# =============================================================================
+########################
+# FUNCIONES DE FITTING
 
-#' Función objetivo para fittear el Modelo Normativo
-#' @param par Vector de parámetros [c, m, b]
-#' @param data Dataframe con columnas 'cases' y 'resp'
-#' @param dag_structure Tipo de estructura causal
-#' @return MSE entre predicciones y datos
+# Función objetivo para fittear el Modelo Normativo
 FitNormative <- function(par, data, dag_structure) {
+  # par:           Vector de parámetros [c, m, b]
+  # data:          Dataframe con columnas 'cases' y 'resp'
+  # dag_structure: Tipo de estructura causal
+  
   c_par = par[1]
   m_par = par[2]
   b_par = par[3]
@@ -263,19 +260,19 @@ FitNormative <- function(par, data, dag_structure) {
   )
   
   mse <- mean((data$resp - predictions)^2)
-  return(mse)
-}
+  return(mse) # MSE entre predicciones y datos
+} 
 
-#' Función objetivo para fittear el Mutation Sampler
-#' @param par Vector de parámetros [c, m, b, len]
-#' @param data Dataframe con columnas 'cases' y 'resp'
-#' @param dag_structure Tipo de estructura causal
-#' @param use_poisson Si TRUE, len es el lambda de una Poisson
-#' @param bias Sesgo hacia estado inicial
-#' @param n_chains Número de cadenas MCMC para promediar (reduce varianza)
-#' @return MSE entre predicciones y datos
+#Función objetivo para fittear el Mutation Sampler
 FitMutationSampler <- function(par, data, dag_structure, 
                                use_poisson = FALSE, bias = 0.5, n_chains = 10) {
+  # par:           Vector de parámetros [c, m, b, len]
+  # data:          Dataframe con columnas 'cases' y 'resp'
+  # dag_structure: Tipo de estructura causal
+  # use_poisson:   Si TRUE, len es el lambda de una Poisson
+  # bias:          Sesgo hacia estado inicial
+  # n_chains:      Número de cadenas MCMC para promediar (reduce varianza)
+  
   tryCatch({
     c_par = par[1]
     m_par = par[2]
@@ -363,23 +360,22 @@ FitMutationSampler <- function(par, data, dag_structure,
     
   }, error = function(e) {
     return(1e10)
-  })
+  }) # MSE entre predicciones y datos
 }
 
-# =============================================================================
-# SECCIÓN 4: GENERACIÓN DE DATOS SINTÉTICOS
-# =============================================================================
+########################
+# GENERACIÓN DE DATOS SINTÉTICOS
 
-#' Generar datos sintéticos usando el Mutation Sampler
-#' @param n_participants Número de participantes a simular
-#' @param true_c,true_m,true_b,true_len Parámetros verdaderos
-#' @param dag_structure Tipo de estructura causal
-#' @param noise_sd Desviación estándar del ruido gaussiano
-#' @param n_samples Número de muestras MCMC para promediar
-#' @return Dataframe con datos sintéticos
+# Generar datos sintéticos usando el Mutation Sampler
 generate_synthetic_data <- function(n_participants, true_c, true_m, true_b, true_len,
                                     dag_structure = "chain", noise_sd = 0.05, 
                                     n_samples = 20) {
+  # n_participants:                Número de participantes a simular
+  # true_c,true_m,true_b,true_len: Parámetros verdaderos
+  # dag_structure:                 Tipo de estructura causal
+  # noise_sd:                      Desviación estándar del ruido gaussiano
+  # n_samples:                     Número de muestras MCMC para promediar
+  
   
   all_data <- data.frame()
   
@@ -413,18 +409,17 @@ generate_synthetic_data <- function(n_participants, true_c, true_m, true_b, true
     all_data <- rbind(all_data, pred_df)
   }
   
-  return(all_data)
+  return(all_data) # Dataframe con datos sintéticos
 }
 
-# =============================================================================
-# SECCIÓN 5: FUNCIONES DE FITTING CON GRID SEARCH
-# =============================================================================
+########################
+# FUNCIONES DE FITTING CON GRID SEARCH
 
-#' Fittear modelo Normativo a un participante
-#' @param df Dataframe con datos del participante
-#' @param dag_structure Tipo de estructura causal
-#' @return Lista con parámetros óptimos y MSE
+# Fittear modelo Normativo a un participante
 fit_normative_participant <- function(df, dag_structure = "chain") {
+  # df:            Dataframe con datos del participante
+  # dag_structure: Tipo de estructura causal
+  
   grid <- expand.grid(
     c = c(0.01, 0.2, 0.4, 0.6, 0.8, 0.99),
     m = c(0.01, 0.2, 0.4, 0.6, 0.8, 0.99),
@@ -455,14 +450,14 @@ fit_normative_participant <- function(df, dag_structure = "chain") {
     m = result$par[2],
     b = result$par[3],
     mse = result$value
-  ))
+  )) # Lista con parámetros óptimos y MSE
 }
 
 #' Fittear Mutation Sampler a un participante
-#' @param df Dataframe con datos del participante
-#' @param dag_structure Tipo de estructura causal
-#' @return Lista con parámetros óptimos y MSE
 fit_ms_participant <- function(df, dag_structure = "chain") {
+  # df:            Dataframe con datos del participante
+  # dag_structure: Tipo de estructura causal
+  
   # Grid más pequeño para búsqueda inicial rápida
   grid <- expand.grid(
     c = c(0.2, 0.5, 0.8),
@@ -508,29 +503,20 @@ fit_ms_participant <- function(df, dag_structure = "chain") {
     b = result$par[3],
     len = result$par[4],
     mse = result$value
-  ))
+  )) # Lista con parámetros óptimos y MSE
 }
 
-# =============================================================================
-# SECCIÓN 6: EJECUCIÓN PRINCIPAL
-# =============================================================================
+########################
+# EJECUCIÓN PRINCIPAL
 
-cat("=============================================================\n")
-cat("Generando datos sintéticos con Mutation Sampler...\n")
-cat("=============================================================\n\n")
-
-# Parámetros verdaderos para la generación de datos
-TRUE_C <- 0.5      # Probabilidad base
-TRUE_M <- 0.8      # Fuerza causal
-TRUE_B <- 0.1      # Probabilidad de fondo
-TRUE_LEN <- 12     # Largo promedio de la cadena MCMC
-N_PARTICIPANTS <- 10  # Reducido para demo más rápida
+# Parámetros para la generación de datos
+TRUE_C <- 0.5         # Probabilidad base
+TRUE_M <- 0.8         # Fuerza causal
+TRUE_B <- 0.1         # Probabilidad de fondo
+TRUE_LEN <- 12        # Largo promedio de la cadena MCMC
+N_PARTICIPANTS <- 10  # Reducido para demostración más rápida
 DAG_STRUCTURE <- "chain"
 
-cat("Parámetros verdaderos:\n")
-cat(sprintf("  c = %.2f, m = %.2f, b = %.2f, len = %d\n", TRUE_C, TRUE_M, TRUE_B, TRUE_LEN))
-cat(sprintf("  N participantes = %d\n", N_PARTICIPANTS))
-cat(sprintf("  Estructura DAG = %s\n\n", DAG_STRUCTURE))
 
 # Generar datos sintéticos
 synthetic_data <- generate_synthetic_data(
@@ -543,17 +529,9 @@ synthetic_data <- generate_synthetic_data(
   noise_sd = 0.03
 )
 
-cat("Datos sintéticos generados. Primeras filas:\n")
-print(head(synthetic_data, 16))
-cat("\n")
 
-# =============================================================================
+########################
 # FITTING DE MODELOS
-# =============================================================================
-
-cat("=============================================================\n")
-cat("Fitteando modelos a cada participante...\n")
-cat("=============================================================\n\n")
 
 # Separar por participante
 participants <- unique(synthetic_data$participant_id)
@@ -588,21 +566,16 @@ for (p in participants) {
   ))
 }
 
-# =============================================================================
+########################
 # COMPARACIÓN DE MODELOS
-# =============================================================================
 
-cat("\n=============================================================\n")
 cat("RESULTADOS: Modelo Normativo\n")
-cat("=============================================================\n")
 print(results_nrm)
 cat(sprintf("\nMSE promedio: %.6f\n", mean(results_nrm$mse)))
 cat(sprintf("Parámetros promedio: c=%.3f, m=%.3f, b=%.3f\n", 
             mean(results_nrm$c), mean(results_nrm$m), mean(results_nrm$b)))
 
-cat("\n=============================================================\n")
 cat("RESULTADOS: Mutation Sampler\n")
-cat("=============================================================\n")
 print(results_ms)
 cat(sprintf("\nMSE promedio: %.6f\n", mean(results_ms$mse)))
 cat(sprintf("Parámetros promedio: c=%.3f, m=%.3f, b=%.3f, len=%.1f\n", 
@@ -616,9 +589,7 @@ k_ms <- 4
 results_nrm$AIC <- n_trials * log(results_nrm$mse) + 2 * (k_nrm + 1)
 results_ms$AIC <- n_trials * log(results_ms$mse) + 2 * (k_ms + 1)
 
-cat("\n=============================================================\n")
 cat("COMPARACIÓN DE MODELOS (AIC)\n")
-cat("=============================================================\n")
 
 comparison <- data.frame(
   participant = results_nrm$participant,
@@ -629,25 +600,18 @@ comparison$best_model <- ifelse(comparison$AIC_NRM < comparison$AIC_MS, "Normati
 
 print(comparison)
 
-cat("\n--- Resumen ---\n")
 cat(sprintf("Modelo Normativo ganador: %d participantes\n", sum(comparison$best_model == "Normativo")))
 cat(sprintf("Mutation Sampler ganador: %d participantes\n", sum(comparison$best_model == "Mutation Sampler")))
 cat(sprintf("\nAIC promedio Normativo: %.2f\n", mean(comparison$AIC_NRM)))
 cat(sprintf("AIC promedio MS: %.2f\n", mean(comparison$AIC_MS)))
 
-# =============================================================================
+
+
+########################
 # GUARDAR RESULTADOS
-# =============================================================================
 
 write.csv(synthetic_data, "synthetic_data.csv", row.names = FALSE)
 write.csv(results_nrm, "fit_results_normative.csv", row.names = FALSE)
 write.csv(results_ms, "fit_results_ms.csv", row.names = FALSE)
 write.csv(comparison, "model_comparison.csv", row.names = FALSE)
 
-cat("\n=============================================================\n")
-cat("Archivos guardados:\n")
-cat("  - synthetic_data.csv\n")
-cat("  - fit_results_normative.csv\n")
-cat("  - fit_results_ms.csv\n")
-cat("  - model_comparison.csv\n")
-cat("=============================================================\n")
